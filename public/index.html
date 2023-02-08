@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link 
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" 
+        rel="stylesheet" 
+        integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" 
+        crossorigin="anonymous"
+    >
+    <link 
+        rel="stylesheet" 
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css"
+    >
+    <script src="/socket.io/socket.io.js"></script>
+    <title>Document</title>
+</head>
+<body>
+    <div id="signup-platform" class="w-75 mx-auto my-5 p-3 shadow">
+        <div class="mb-3 row g-0">
+            <label for="first-name-input" class="col-md-2 col-form-label">First name</label>
+            <div class="col-md-10">
+                <input type="text" class="form-control" id="first-name-input">
+            </div>
+        </div>
+        <div class="mb-3 row g-0">
+            <label for="last-name-input" class="col-md-2 col-form-label">Last name</label>
+            <div class="col-md-10">
+                <input type="text" class="form-control" id="last-name-input">
+            </div>
+        </div>
+        <div class="mb-3 row g-0">
+            <button class="btn btn-primary" onclick="signup()">
+                Start messaging
+            </button>
+        </div>
+    </div>
+    <div hidden id="online-users-platform" class="w-75 mx-auto my-5 p-3 shadow">
+        <!-- online users, each clickable -->
+        <h2 class="mb-3">Who's online</h2>
+        <div class="list-group">
+            <!-- To show as active, add "active" to classlist and-->
+            <!-- set aria-current="true" -->
+        </div>
+    </div>
+    <div hidden id="messaging-platform" class="w-75 mx-auto my-5 p-3 shadow">
+        <small>Messaging: <span id="recipient-span">everyone</span></small>
+        <div class="d-flex justify-content-between">
+            <div class="w-100">
+                <input type="text" class="form-control" id="message-input" placeholder="Type...">
+            </div>
+            <button id="send-btn" class="btn btn-primary ms-2" onclick="sendBroadcast()">
+                <i class="bi bi-send"></i>
+            </button>
+        </div>
+    </div>
+    <div hidden id="incoming-messages-platform" class="w-75 mx-auto my-5 p-3 shadow">
+        <!-- messages the client has received -->
+        <div class="list-group">
+        </div>
+    </div>
+            
+    <script>
+        //keeping it global
+        let socket;
+        
+        //connect and apply listeners
+        const constructSocket = () => {
+            socket = io.connect();
+            socket.on('message-to-client',(message)=>{
+                console.log('New message:');
+                console.log(message);
+                addIncomingMessage(message);
+            });
+            socket.on('all-online-users',(users)=>{
+                console.log('All online users:');
+                console.log(users);
+                populateOnlineUsers(users);
+            })
+        }
+
+        const signup = () => {
+            //connect and apply listeners
+            constructSocket();
+            const fname = document.getElementById('first-name-input').value;
+            const lname = document.getElementById('last-name-input').value;
+            const fullname = {
+                fname, lname
+            };
+            socket.emit('signup',fullname);
+            afterSignup();
+        }
+        
+        const afterSignup = () => {
+            //SPA changes in display of divs 
+            document.getElementById('signup-platform').hidden = true;
+            document.getElementById('online-users-platform').hidden = false;
+            document.getElementById('messaging-platform').hidden = false;
+            document.getElementById('incoming-messages-platform').hidden = false;
+        }
+
+        const sendBroadcast = () => {
+            const messageInput = document.getElementById('message-input');
+            //checking messaging mode (broadcast)
+
+            socket.emit('broadcast-message-to-server',messageInput.value);
+            messageInput.value = '';
+        }
+
+        const sendP2P = (id) => {
+            const messageInput = document.getElementById('message-input');
+            //checking messaging mode (broadcast)
+            
+            socket.emit('p2p-message-to-server', id, messageInput.value);
+            messageInput.value = '';
+        }
+
+        const populateOnlineUsers = (users) => {
+            const list = document.querySelector('#online-users-platform > div.list-group');
+            //clearing the div before appending everything.
+            clearNode(list);
+            //building a string progressively
+            let content = '';
+            users.forEach(user => {
+                content += 
+                `<button id="${user.id}" type="button" class="list-group-item list-group-item-action"`+
+                `onclick="changeMessagingMode(event)">`+
+                `${user.fname} ${user.lname}`+
+                `</button>`
+            });
+            //assigning the value of the string
+            list.innerHTML = content;
+        }
+
+        const addIncomingMessage = (message) => {
+            const list = document.querySelector('#incoming-messages-platform > div.list-group');
+            //customizing the client's own name
+            if (message.id == socket.id) {
+                message.fname = 'You';
+                message.lname = '';
+            }
+            //distinguishing private messages
+            let P2PAddition = '';
+            if (message.isP2P) {
+                //customizing the client's own name
+                if (message.recipientID == socket.id) {
+                    message.recipientFname = 'You';
+                    message.recipientLname = '';
+                }
+                P2PAddition =
+                ` to ${message.recipientFname} ${message.recipientLname}`+
+                ` <span class="badge text-bg-light">private</span>`;
+            }
+            //for date and time formatiing
+            let date = new Date(message.date);
+            let hours = date.getHours();
+            if (hours < 10) {hours = '0'+hours;}
+            let mins = date.getMinutes();
+            if (mins < 10) {mins = '0'+mins;}
+            let content = 
+            `<a href="#" class="list-group-item list-group-item-action">`+
+                `<div class="d-flex w-100 justify-content-between">`+
+                    `<h5 class="mb-1">`+
+                        `${message.fname} ${message.lname}${P2PAddition}`+
+                    `</h5>`+
+                    `<small class="text-muted" title="${message.date}">`+
+                    `${hours}:${mins}</small>`+
+                `</div>`+
+                `<p class="mb-1">${message.text}</p>`+
+            `</a>`
+            list.innerHTML = content + list.innerHTML;
+        }
+
+        const changeMessagingMode = (ev) => {
+            //where the changes will be made
+            const recipientSpan = document.getElementById('recipient-span');
+            const sendBtn = document.getElementById('send-btn');
+            //what was clicked
+            const btn = ev.currentTarget;
+            //checking if the button that was clicked is
+            //a user, or the close button that cancels P2P
+            if (btn.id == 'recipient-close-btn') {
+                //"resetting" the span and writing in it 'everyone'
+                //to indicate broadcast mode
+                clearNode(recipientSpan);
+                recipientSpan.className = '';
+                recipientSpan.innerText = 'everyone';
+                //switching the function from P2P to broadcast
+                sendBtn.onclick = () => {sendBroadcast()};
+            } else {
+                //clearing the span
+                clearNode(recipientSpan);
+                //styling
+                recipientSpan.className = "badge text-bg-light";
+                //assigning the name of the user that was clicked
+                recipientSpan.innerHTML = btn.innerText;
+                //adding a close button that cancels P2P
+                recipientSpan.innerHTML += 
+                `<button type="button" class="btn-close" `+
+                `id="recipient-close-btn" `+
+                `onclick="changeMessagingMode(event)"></button>`;
+                //switching the function from broadcast to P2P 
+                sendBtn.onclick = () => {sendP2P(btn.id)};
+            }
+        }
+
+        /**
+         * Helper method to clear a div completely
+         */
+        const clearNode = (elem) => {
+            while (elem.lastElementChild) {
+                clearNode(elem.lastElementChild);
+                elem.removeChild(elem.lastElementChild);
+            }
+        }
+    </script>
+    </body>
+</html>
